@@ -147,7 +147,17 @@ void setup_vulkan() {
         printf("Note: window dimensions differ (got %dx%d)\n", w, h);
 }
 
+
+
 SDL_mutex *lock;
+static void on_process(void *userdata) {
+    SDL_LockMutex(lock);
+    printf("on_process\n");
+    SDL_UnlockMutex(lock);
+}
+
+static const struct pw_stream_events pw_stream_events = {PW_VERSION_STREAM_EVENTS,
+                                                      .process = on_process};
 void on_pipewire_stream_added(OrgGnomeMutterScreenCastStream *stream, guint node_id, gpointer user_data) {
     g_print("PipeWire stream added, node id: %u\n", node_id);
 
@@ -157,13 +167,14 @@ void on_pipewire_stream_added(OrgGnomeMutterScreenCastStream *stream, guint node
         fprintf(stderr, "could not create PipeWire loop");
     }
 
+    pw_thread_loop_lock(pw_thread_loop);
     if (pw_thread_loop_start(pw_thread_loop) != 0) {
         fprintf(stderr, "could not start the loop");
     }
-    struct pw_context *pw_context = pw_context_new(pw_thread_loop_get_loop(pw_thread_loop), NULL, 0);
-    struct pw_core *pw_core = pw_context_connect(pw_context, NULL, 0);
-    struct pw_stream *pw_stream = pw_stream_new(pw_core, "pl-renderer", NULL);
-    const int result = pw_stream_connect(pw_stream, PW_DIRECTION_OUTPUT, node_id, PW_STREAM_FLAG_AUTOCONNECT, NULL, 0);
+    struct pw_properties *pw_props = pw_properties_new(PW_KEY_MEDIA_TYPE, "Video", PW_KEY_MEDIA_CATEGORY, "Playback",
+                            PW_KEY_MEDIA_ROLE, "Screen", PW_KEY_APP_NAME, "Breezy Desktop");
+    struct pw_stream *pw_stream = pw_stream_new_simple(pw_thread_loop_get_loop(pw_thread_loop), "pl-renderer", pw_props, &pw_stream_events, NULL);
+    const int result = pw_stream_connect(pw_stream, PW_DIRECTION_OUTPUT, node_id, PW_STREAM_FLAG_AUTOCONNECT | PW_STREAM_FLAG_EXCLUSIVE, NULL, 0);
 
     win = create_window();
 
