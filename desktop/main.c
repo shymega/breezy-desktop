@@ -322,6 +322,7 @@ int main() {
 
     // Call the RecordVirtual method
     g_variant_builder_init(&builder, G_VARIANT_TYPE("a{sv}"));
+    g_variant_builder_add(&builder, "{sv}", "is-platform", g_variant_new_uint32(1));
     g_variant_builder_add(&builder, "{sv}", "cursor-mode", g_variant_new_uint32(1));
     parameters = g_variant_builder_end(&builder);
     gchar *stream_path = NULL;
