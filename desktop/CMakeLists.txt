@@ -16,6 +16,7 @@ find_package(Vulkan REQUIRED)
 
 add_executable(breezyDesktop
 		main.c
+		pipewire.c
 		mutter/remote_desktop.c
 		mutter/screen_cast.c
 )

@@ -1,5 +1,6 @@
 #include "mutter_remote_desktop.h"
 #include "mutter_screen_cast.h"
+#include "pipewire.h"
 
 #include <assert.h>
 #include <pipewire/pipewire.h>
@@ -161,24 +162,26 @@ static const struct pw_stream_events pw_stream_events = {PW_VERSION_STREAM_EVENT
 void on_pipewire_stream_added(OrgGnomeMutterScreenCastStream *stream, guint node_id, gpointer user_data) {
     g_print("PipeWire stream added, node id: %u\n", node_id);
 
-    pw_init(NULL, NULL);
-    struct pw_thread_loop *pw_thread_loop = pw_thread_loop_new("breezy-desktop-pipewire-thread", NULL);
-    if (pw_thread_loop == NULL) {
-        fprintf(stderr, "could not create PipeWire loop");
-    }
+    // pw_init(NULL, NULL);
+    // struct pw_thread_loop *pw_thread_loop = pw_thread_loop_new("breezy-desktop-pipewire-thread", NULL);
+    // if (pw_thread_loop == NULL) {
+    //     fprintf(stderr, "could not create PipeWire loop");
+    // }
 
-    pw_thread_loop_lock(pw_thread_loop);
-    if (pw_thread_loop_start(pw_thread_loop) != 0) {
-        fprintf(stderr, "could not start the loop");
-    }
-    struct pw_properties *pw_props = pw_properties_new(PW_KEY_MEDIA_TYPE, "Video", PW_KEY_MEDIA_CATEGORY, "Playback",
-                            PW_KEY_MEDIA_ROLE, "Screen", PW_KEY_APP_NAME, "Breezy Desktop");
-    struct pw_stream *pw_stream = pw_stream_new_simple(pw_thread_loop_get_loop(pw_thread_loop), "pl-renderer", pw_props, &pw_stream_events, NULL);
-    const int result = pw_stream_connect(pw_stream, PW_DIRECTION_OUTPUT, node_id, PW_STREAM_FLAG_AUTOCONNECT | PW_STREAM_FLAG_EXCLUSIVE, NULL, 0);
+    // pw_thread_loop_lock(pw_thread_loop);
+    // if (pw_thread_loop_start(pw_thread_loop) != 0) {
+    //     fprintf(stderr, "could not start the loop");
+    // }
+    // struct pw_properties *pw_props = pw_properties_new(PW_KEY_MEDIA_TYPE, "Video", PW_KEY_MEDIA_CATEGORY, "Playback",
+    //                         PW_KEY_MEDIA_ROLE, "Screen", PW_KEY_APP_NAME, "Breezy Desktop");
+    // struct pw_stream *pw_stream = pw_stream_new_simple(pw_thread_loop_get_loop(pw_thread_loop), "pl-renderer", pw_props, &pw_stream_events, NULL);
+    // const int result = pw_stream_connect(pw_stream, PW_DIRECTION_OUTPUT, node_id, PW_STREAM_FLAG_AUTOCONNECT | PW_STREAM_FLAG_EXCLUSIVE, NULL, 0);
 
-    win = create_window();
+    // win = create_window();
 
-    lock = SDL_CreateMutex();
+    // lock = SDL_CreateMutex();
+
+    pw_setup(node_id);
 }
 
 int main() {
