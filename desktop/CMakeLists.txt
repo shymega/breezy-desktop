@@ -11,6 +11,7 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(GLIB REQUIRED glib-2.0 gio-2.0)
 pkg_check_modules(PIPEWIRE REQUIRED libpipewire-0.3)
 pkg_check_modules(LIBPLACEBO REQUIRED libplacebo)
+pkg_check_modules(LIBEVDEV REQUIRED libevdev)
 find_package(SDL2 REQUIRED)
 find_package(Vulkan REQUIRED)
 
@@ -19,6 +20,7 @@ add_executable(breezyDesktop
 		pipewire.c
 		mutter/remote_desktop.c
 		mutter/screen_cast.c
+		remote_desktop_inputs.c
 )
 
 target_include_directories(breezyDesktop
@@ -29,6 +31,7 @@ target_include_directories(breezyDesktop
 		${LIBPLACEBO_INCLUDE_DIRS}
 		${GLIB_INCLUDE_DIRS}
 		${SDL2_INCLUDE_DIRS}
+		${LIBEVDEV_INCLUDE_DIRS}
 )
 
 target_link_libraries(breezyDesktop
@@ -37,6 +40,7 @@ target_link_libraries(breezyDesktop
 				${LIBPLACEBO_LIBRARIES}
 				${GLIB_LIBRARIES}
 				${SDL2_LIBRARIES}
+				${LIBEVDEV_LIBRARIES}
 				Vulkan::Vulkan
 )
 add_definitions(${GLIB_CFLAGS_OTHER} ${LIBPLACEBO_CFLAGS_OTHER})

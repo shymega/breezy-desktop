@@ -1,6 +1,7 @@
 #include "mutter_remote_desktop.h"
 #include "mutter_screen_cast.h"
 #include "pipewire.h"
+#include "remote_desktop_inputs.h"
 
 #include <assert.h>
 #include <pipewire/pipewire.h>
@@ -322,7 +323,7 @@ int main() {
 
     // Call the RecordVirtual method
     g_variant_builder_init(&builder, G_VARIANT_TYPE("a{sv}"));
-    g_variant_builder_add(&builder, "{sv}", "is-platform", g_variant_new_uint32(1));
+    g_variant_builder_add(&builder, "{sv}", "is-platform", g_variant_new_boolean(TRUE));
     g_variant_builder_add(&builder, "{sv}", "cursor-mode", g_variant_new_uint32(1));
     parameters = g_variant_builder_end(&builder);
     gchar *stream_path = NULL;
@@ -341,6 +342,8 @@ int main() {
     }
 
     g_print("stream path: %s\n", stream_path);
+
+    remote_desktop_inputs_init(remote_desktop_session, stream_path);
 
     // Create a new proxy for the org.gnome.Mutter.ScreenCast.Stream interface
     OrgGnomeMutterScreenCastStream *stream;

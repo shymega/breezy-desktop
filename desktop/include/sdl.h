@@ -28,6 +28,8 @@
  [title]
  */
 
+#pragma once
+
 #include <SDL2/SDL.h>
 
 #include <spa/utils/type.h>
