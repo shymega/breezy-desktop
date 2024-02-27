@@ -147,6 +147,8 @@ void setup_vulkan() {
 
     if (w != WIDTH || h != HEIGHT)
         printf("Note: window dimensions differ (got %dx%d)\n", w, h);
+
+    renderer = pl_renderer_create(ctx, gpu);
 }
 
 
@@ -155,32 +157,41 @@ SDL_mutex *lock;
 static void on_process(void *userdata) {
     SDL_LockMutex(lock);
     printf("on_process\n");
+
+    struct pl_swapchain_frame frame;
+    bool ok = pl_swapchain_start_frame(swapchain, &frame);
+    if (!ok) {
+        SDL_UnlockMutex(lock);
+        return;
+    }
+
+    struct pl_frame target;
+    pl_frame_from_swapchain(&target, &frame);
+
+    if (!pl_render_image(renderer, &image, &target, &pl_render_fast_params)) {
+        fprintf(stderr, "Failed rendering frame!\n");
+        pl_tex_clear(gpu, frame.fbo, (float[4]){ 1.0 });
+    }
+
+    ok = pl_swapchain_submit_frame(swapchain);
+    if (!ok) {
+        fprintf(stderr, "Failed submitting frame!\n");
+        SDL_UnlockMutex(lock);
+        return;
+    }
+
+    pl_swapchain_swap_buffers(swapchain);
+
     SDL_UnlockMutex(lock);
 }
 
-static const struct pw_stream_events pw_stream_events = {PW_VERSION_STREAM_EVENTS,
-                                                      .process = on_process};
 void on_pipewire_stream_added(OrgGnomeMutterScreenCastStream *stream, guint node_id, gpointer user_data) {
     g_print("PipeWire stream added, node id: %u\n", node_id);
 
-    // pw_init(NULL, NULL);
-    // struct pw_thread_loop *pw_thread_loop = pw_thread_loop_new("breezy-desktop-pipewire-thread", NULL);
-    // if (pw_thread_loop == NULL) {
-    //     fprintf(stderr, "could not create PipeWire loop");
-    // }
+    win = create_window();
+    setup_vulkan();
 
-    // pw_thread_loop_lock(pw_thread_loop);
-    // if (pw_thread_loop_start(pw_thread_loop) != 0) {
-    //     fprintf(stderr, "could not start the loop");
-    // }
-    // struct pw_properties *pw_props = pw_properties_new(PW_KEY_MEDIA_TYPE, "Video", PW_KEY_MEDIA_CATEGORY, "Playback",
-    //                         PW_KEY_MEDIA_ROLE, "Screen", PW_KEY_APP_NAME, "Breezy Desktop");
-    // struct pw_stream *pw_stream = pw_stream_new_simple(pw_thread_loop_get_loop(pw_thread_loop), "pl-renderer", pw_props, &pw_stream_events, NULL);
-    // const int result = pw_stream_connect(pw_stream, PW_DIRECTION_OUTPUT, node_id, PW_STREAM_FLAG_AUTOCONNECT | PW_STREAM_FLAG_EXCLUSIVE, NULL, 0);
-
-    // win = create_window();
-
-    // lock = SDL_CreateMutex();
+    lock = SDL_CreateMutex();
 
     pw_setup(node_id);
 }
