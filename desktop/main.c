@@ -11,8 +11,8 @@
 #include <libplacebo/vulkan.h>
 #include <gio/gio.h>
 #include <glib.h>
-#include <SDL.h>
-#include <SDL_vulkan.h>
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_vulkan.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <execinfo.h>
@@ -30,7 +30,7 @@ const struct pl_vk_inst *vk_inst;
 VkSurfaceKHR surf;
 const struct pl_gpu *gpu;
 const struct pl_swapchain *swapchain;
-SDL_mutex *lock;
+SDL_Mutex *lock;
 struct pl_frame image;
 const struct pl_tex *plane_tex[3];
 
@@ -58,11 +58,9 @@ static SDL_Window *create_window() {
 
     win = SDL_CreateWindow(
         "Breezy Desktop",
-        SDL_WINDOWPOS_CENTERED,
-        SDL_WINDOWPOS_CENTERED,
         WIDTH,
         HEIGHT,
-        SDL_WINDOW_VULKAN | SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_BORDERLESS
+        SDL_WINDOW_VULKAN | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_BORDERLESS
     );
 
     if (win == NULL) {
@@ -78,16 +76,8 @@ void setup_vulkan() {
 
     // Init Vulkan
     unsigned num = 0;
-    if (!SDL_Vulkan_GetInstanceExtensions(win, &num, NULL)) {
-        fprintf(stderr, "Failed enumerating Vulkan extensions: %s\n", SDL_GetError());
-        exit(1);
-    }
-
-    const char **extensions = malloc(num * sizeof(const char *));
-    assert(extensions);
-
-    SDL_bool ok = SDL_Vulkan_GetInstanceExtensions(win, &num, extensions);
-    if (!ok) {
+    const char **extensions = SDL_Vulkan_GetInstanceExtensions(&num);
+    if (!extensions) {
         fprintf(stderr, "Failed getting Vk instance extensions\n");
         exit(1);
     }
@@ -107,9 +97,8 @@ void setup_vulkan() {
         fprintf(stderr, "Failed creating Vulkan instance!\n");
         exit(1);
     }
-    free(extensions);
 
-    if (!SDL_Vulkan_CreateSurface(win, vk_inst->instance, &surf)) {
+    if (!SDL_Vulkan_CreateSurface(win, vk_inst->instance, NULL, &surf)) {
         fprintf(stderr, "Failed creating vulkan surface: %s\n", SDL_GetError());
         exit(1);
     }
@@ -153,7 +142,7 @@ void setup_vulkan() {
 
 
 
-SDL_mutex *lock;
+SDL_Mutex *lock;
 static void on_process(void *userdata) {
     SDL_LockMutex(lock);
     printf("on_process\n");
@@ -188,8 +177,8 @@ static void on_process(void *userdata) {
 void on_pipewire_stream_added(OrgGnomeMutterScreenCastStream *stream, guint node_id, gpointer user_data) {
     g_print("PipeWire stream added, node id: %u\n", node_id);
 
-    win = create_window();
-    setup_vulkan();
+    // win = create_window();
+    // setup_vulkan();
 
     lock = SDL_CreateMutex();
 

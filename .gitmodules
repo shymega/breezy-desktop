@@ -8,3 +8,6 @@
 [submodule "modules/xrealAirLinuxDriver"]
 	path = modules/xrealAirLinuxDriver
 	url = https://github.com/wheaney/XRLinuxDriver.git
+[submodule "desktop/modules/SDL"]
+	path = desktop/modules/SDL
+	url = https://github.com/libsdl-org/SDL.git

@@ -3,7 +3,8 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <signal.h>
- 
+
+#include <SDL3/SDL.h>
 #include <spa/utils/result.h>
 #include <spa/param/video/format-utils.h>
 #include <spa/param/tag-utils.h>
@@ -17,8 +18,6 @@
 #define HEIGHT  1080
  
 #define MAX_BUFFERS     64
- 
-#include "sdl.h"
 
 void log_video_info(struct spa_video_info *info) {
     const char *media_type = spa_debug_type_find_name(spa_type_media_type, info->media_type);
@@ -58,8 +57,8 @@ struct data {
         struct spa_rectangle size;
  
         int counter;
-        SDL_Rect rect;
-        SDL_Rect cursor_rect;
+        SDL_FRect rect;
+        SDL_FRect cursor_rect;
         bool is_yuv;
 };
  
@@ -68,7 +67,7 @@ static void handle_events(struct data *data)
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
                 switch (event.type) {
-                case SDL_QUIT:
+                case SDL_EVENT_QUIT:
                         pw_main_loop_quit(data->loop);
                         break;
                 }
@@ -131,47 +130,47 @@ on_process(void *_data)
                 data->rect.h = mc->region.size.height;
         }
         /* get cursor metadata */
-        if ((mcs = spa_buffer_find_meta_data(buf, SPA_META_Cursor, sizeof(*mcs))) &&
-            spa_meta_cursor_is_valid(mcs)) {
-                struct spa_meta_bitmap *mb;
-                void *cdata;
-                int cstride;
+        // if ((mcs = spa_buffer_find_meta_data(buf, SPA_META_Cursor, sizeof(*mcs))) &&
+        //     spa_meta_cursor_is_valid(mcs)) {
+        //         struct spa_meta_bitmap *mb;
+        //         void *cdata;
+        //         int cstride;
  
-                data->cursor_rect.x = mcs->position.x;
-                data->cursor_rect.y = mcs->position.y;
+        //         data->cursor_rect.x = mcs->position.x;
+        //         data->cursor_rect.y = mcs->position.y;
  
-                mb = SPA_PTROFF(mcs, mcs->bitmap_offset, struct spa_meta_bitmap);
-                data->cursor_rect.w = mb->size.width;
-                data->cursor_rect.h = mb->size.height;
+        //         mb = SPA_PTROFF(mcs, mcs->bitmap_offset, struct spa_meta_bitmap);
+        //         data->cursor_rect.w = mb->size.width;
+        //         data->cursor_rect.h = mb->size.height;
  
-                if (data->cursor == NULL) {
-                        data->cursor = SDL_CreateTexture(data->renderer,
-                                                 id_to_sdl_format(mb->format),
-                                                 SDL_TEXTUREACCESS_STREAMING,
-                                                 mb->size.width, mb->size.height);
-                        SDL_SetTextureBlendMode(data->cursor, SDL_BLENDMODE_BLEND);
-                }
+        //         if (data->cursor == NULL) {
+        //                 data->cursor = SDL_CreateTexture(data->renderer,
+        //                                          id_to_sdl_format(mb->format),
+        //                                          SDL_TEXTUREACCESS_STREAMING,
+        //                                          mb->size.width, mb->size.height);
+        //                 SDL_SetTextureBlendMode(data->cursor, SDL_BLENDMODE_BLEND);
+        //         }
  
  
-                if (SDL_LockTexture(data->cursor, NULL, &cdata, &cstride) < 0) {
-                        fprintf(stderr, "Couldn't lock cursor texture: %s\n", SDL_GetError());
-                        goto done;
-                }
+        //         if (SDL_LockTexture(data->cursor, NULL, &cdata, &cstride) < 0) {
+        //                 fprintf(stderr, "Couldn't lock cursor texture: %s\n", SDL_GetError());
+        //                 goto done;
+        //         }
  
-                /* copy the cursor bitmap into the texture */
-                src = SPA_PTROFF(mb, mb->offset, uint8_t);
-                dst = cdata;
-                ostride = SPA_MIN(cstride, mb->stride);
+        //         /* copy the cursor bitmap into the texture */
+        //         src = SPA_PTROFF(mb, mb->offset, uint8_t);
+        //         dst = cdata;
+        //         ostride = SPA_MIN(cstride, mb->stride);
  
-                for (i = 0; i < mb->size.height; i++) {
-                        memcpy(dst, src, ostride);
-                        dst += cstride;
-                        src += mb->stride;
-                }
-                SDL_UnlockTexture(data->cursor);
+        //         for (i = 0; i < mb->size.height; i++) {
+        //                 memcpy(dst, src, ostride);
+        //                 dst += cstride;
+        //                 src += mb->stride;
+        //         }
+        //         SDL_UnlockTexture(data->cursor);
  
-                render_cursor = true;
-        }
+        //         render_cursor = true;
+        // }
  
         /* copy video image in texture */
         if (data->is_yuv) {
@@ -223,9 +222,9 @@ on_process(void *_data)
  
         SDL_RenderClear(data->renderer);
         /* now render the video and then the cursor if any */
-        SDL_RenderCopy(data->renderer, data->texture, &data->rect, NULL);
+        SDL_RenderTexture(data->renderer, data->texture, &data->rect, NULL);
         if (render_cursor) {
-                SDL_RenderCopy(data->renderer, data->cursor, NULL, &data->cursor_rect);
+                SDL_RenderTexture(data->renderer, data->cursor, NULL, &data->cursor_rect);
         }
         SDL_RenderPresent(data->renderer);
  
@@ -459,6 +458,8 @@ int pw_setup(int node_id) {
                         &stream_events,
                         &data);
  
+        SDL_SetHint(SDL_HINT_RENDER_DRIVER, "vulkan");
+        SDL_SetHint(SDL_HINT_RENDER_VSYNC, "0");
         if (SDL_Init(SDL_INIT_VIDEO) < 0) {
                 fprintf(stderr, "can't initialize SDL: %s\n", SDL_GetError());
                 return -1;
