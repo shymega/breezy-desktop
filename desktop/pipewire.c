@@ -13,11 +13,14 @@
 #include <spa/debug/pod.h>
  
 #include <pipewire/pipewire.h>
+#include <pthread.h>
  
 #define WIDTH   1920
 #define HEIGHT  1080
  
 #define MAX_BUFFERS     64
+
+#define FRAME_TICKS_NS 1000000000.0 / 60.0
 
 void log_video_info(struct spa_video_info *info) {
     const char *media_type = spa_debug_type_find_name(spa_type_media_type, info->media_type);
@@ -38,6 +41,7 @@ struct pixel {
 };
  
 struct data {
+        bool ready;
         const char *path;
  
         SDL_Renderer *renderer;
@@ -60,6 +64,8 @@ struct data {
         SDL_FRect rect;
         SDL_FRect cursor_rect;
         bool is_yuv;
+
+        pthread_mutex_t lock;
 };
  
 static void handle_events(struct data *data)
@@ -83,10 +89,10 @@ static void handle_events(struct data *data)
  *
  *  pw_stream_queue_buffer(stream, b);
  */
-static void
-on_process(void *_data)
+static void on_process(void *_data)
 {
         struct data *data = _data;
+        pthread_mutex_lock(&data->lock);
         struct pw_stream *stream = data->stream;
         struct pw_buffer *b;
         struct spa_buffer *buf;
@@ -109,6 +115,7 @@ on_process(void *_data)
         }
         if (b == NULL) {
                 pw_log_warn("out of buffers: %m");
+                pthread_mutex_unlock(&data->lock);
                 return;
         }
  
@@ -219,23 +226,19 @@ on_process(void *_data)
                 }
                 SDL_UnlockTexture(data->texture);
         }
- 
-        SDL_RenderClear(data->renderer);
-        /* now render the video and then the cursor if any */
-        SDL_RenderTexture(data->renderer, data->texture, &data->rect, NULL);
-        if (render_cursor) {
-                SDL_RenderTexture(data->renderer, data->cursor, NULL, &data->cursor_rect);
-        }
-        SDL_RenderPresent(data->renderer);
+
+        data->ready = true;
  
       done:
         pw_stream_queue_buffer(stream, b);
+        pthread_mutex_unlock(&data->lock);
 }
  
 static void on_stream_state_changed(void *_data, enum pw_stream_state old,
                                     enum pw_stream_state state, const char *error)
 {
         struct data *data = _data;
+        pthread_mutex_lock(&data->lock);
         log_video_info(&data->format);
         fprintf(stderr, "stream state: \"%s\"\n", pw_stream_state_as_string(state));
         switch (state) {
@@ -252,18 +255,21 @@ static void on_stream_state_changed(void *_data, enum pw_stream_state old,
         default:
                 break;
         }
+        pthread_mutex_unlock(&data->lock);
 }
  
 static void
 on_stream_io_changed(void *_data, uint32_t id, void *area, uint32_t size)
 {
         struct data *data = _data;
+        pthread_mutex_lock(&data->lock);
  
         switch (id) {
         case SPA_IO_Position:
                 data->position = area;
                 break;
         }
+        pthread_mutex_unlock(&data->lock);
 }
  
 /* Be notified when the stream param changes. We're only looking at the
@@ -284,6 +290,7 @@ on_stream_param_changed(void *_data, uint32_t id, const struct spa_pod *param)
         if (already_set) return;
 
         struct data *data = _data;
+        pthread_mutex_lock(&data->lock);
         struct pw_stream *stream = data->stream;
         uint8_t params_buffer[1024];
         struct spa_pod_builder b = SPA_POD_BUILDER_INIT(params_buffer, sizeof(params_buffer));
@@ -294,20 +301,20 @@ on_stream_param_changed(void *_data, uint32_t id, const struct spa_pod *param)
  
         if (param != NULL && id == SPA_PARAM_Tag) {
                 spa_debug_pod(0, NULL, param);
-                return;
+                goto done;
         }
         /* NULL means to clear the format */
         if (param == NULL || id != SPA_PARAM_Format)
-                return;
+                goto done;
  
         fprintf(stderr, "got format:\n");
         spa_debug_format(2, NULL, param);
  
         if (spa_format_parse(param, &data->format.media_type, &data->format.media_subtype) < 0)
-                return;
+                goto done;
  
         if (data->format.media_type != SPA_MEDIA_TYPE_video)
-                return;
+                goto done;
  
         switch (data->format.media_subtype) {
         case SPA_MEDIA_SUBTYPE_raw:
@@ -325,7 +332,7 @@ on_stream_param_changed(void *_data, uint32_t id, const struct spa_pod *param)
         case SPA_MEDIA_SUBTYPE_dsp:
                 spa_format_video_dsp_parse(param, &data->format.info.dsp);
                 if (data->format.info.dsp.format != SPA_VIDEO_FORMAT_DSP_F32)
-                        return;
+                        goto done;
                 sdl_format = SDL_PIXELFORMAT_RGBA32;
                 data->size = SPA_RECTANGLE(data->position->video.size.width,
                                 data->position->video.size.height);
@@ -338,11 +345,11 @@ on_stream_param_changed(void *_data, uint32_t id, const struct spa_pod *param)
  
         if (sdl_format == SDL_PIXELFORMAT_UNKNOWN) {
                 pw_stream_set_error(stream, -EINVAL, "unknown pixel format");
-                return;
+                goto done;
         }
         if (data->size.width == 0 || data->size.height == 0) {
                 pw_stream_set_error(stream, -EINVAL, "invalid size");
-                return;
+                goto done;
         }
  
         data->texture = SDL_CreateTexture(data->renderer,
@@ -402,6 +409,9 @@ on_stream_param_changed(void *_data, uint32_t id, const struct spa_pod *param)
  
         /* we are done */
         pw_stream_update_params(stream, params, 4);
+
+        done:
+                pthread_mutex_unlock(&data->lock);
 }
  
 /* these are the stream events we listen for */
@@ -420,6 +430,34 @@ static void do_quit(void *userdata, int signal_number)
 }
  
 struct data data = { 0, };
+static Uint64 next_render_time;
+
+Uint64 render_time_left(void)
+{
+    Uint64 now;
+
+    now = SDL_GetTicksNS();
+    if(next_render_time <= now)
+        return 0;
+    else
+        return next_render_time - now;
+}
+
+void* render_thread(void *arg) {
+        next_render_time = SDL_GetTicksNS() + FRAME_TICKS_NS;
+        while (true) {
+                SDL_DelayNS(render_time_left());
+                if (data.ready) {
+                        pthread_mutex_lock(&data.lock);
+                        SDL_RenderClear(data.renderer);
+                        SDL_RenderTexture(data.renderer, data.texture, &data.rect, NULL);
+                        SDL_RenderPresent(data.renderer);
+                        pthread_mutex_unlock(&data.lock);
+                }
+                next_render_time += FRAME_TICKS_NS;
+        }
+}
+
 int pw_setup(int node_id) {
         const struct spa_pod *params[3];
         uint8_t buffer[1024];
@@ -430,6 +468,7 @@ int pw_setup(int node_id) {
         pw_init(NULL, NULL);
  
         /* create a main loop */
+        data.lock = (pthread_mutex_t)PTHREAD_MUTEX_INITIALIZER;
         data.loop = pw_main_loop_new(NULL);
  
         pw_loop_add_signal(pw_main_loop_get_loop(data.loop), SIGINT, do_quit, &data);
@@ -464,9 +503,21 @@ int pw_setup(int node_id) {
                 fprintf(stderr, "can't initialize SDL: %s\n", SDL_GetError());
                 return -1;
         }
+
+
+        int numdisplays;
+        SDL_DisplayID *display_ids = SDL_GetDisplays(&numdisplays);
+        printf("Number of displays: %i\n", numdisplays);
+        int found_xr_display_index = -1;
+        for(int i = 0; i < numdisplays; ++i) {
+                if (strcmp(SDL_GetDisplayName(display_ids[i]), "Air 87\"") == 0) {
+                        found_xr_display_index = i;
+                        break;
+                }
+        }
  
         if (SDL_CreateWindowAndRenderer
-            (WIDTH, HEIGHT, SDL_WINDOW_RESIZABLE, &data.window, &data.renderer)) {
+            (WIDTH, HEIGHT, SDL_WINDOW_BORDERLESS | SDL_WINDOW_FULLSCREEN, &data.window, &data.renderer)) {
                 fprintf(stderr, "can't create window: %s\n", SDL_GetError());
                 return -1;
         }
@@ -484,9 +535,13 @@ int pw_setup(int node_id) {
                 fprintf(stderr, "can't connect: %s\n", spa_strerror(res));
                 return -1;
         }
+
+        pthread_t render_thread_id;
+        pthread_create(&render_thread_id, NULL, render_thread, NULL);
  
         /* do things until we quit the mainloop */
         pw_main_loop_run(data.loop);
+        pthread_join(render_thread_id, NULL);
 }
 
 void pw_teardown() {
