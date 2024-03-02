@@ -15,9 +15,6 @@
 #include <pipewire/pipewire.h>
 #include <pthread.h>
  
-#define WIDTH   1920
-#define HEIGHT  1080
- 
 #define MAX_BUFFERS     64
 
 #define FRAME_TICKS_NS 1000000000.0 / 60.0
@@ -79,16 +76,7 @@ static void handle_events(struct data *data)
                 }
         }
 }
- 
-/* our data processing function is in general:
- *
- *  struct pw_buffer *b;
- *  b = pw_stream_dequeue_buffer(stream);
- *
- *  .. do stuff with buffer ...
- *
- *  pw_stream_queue_buffer(stream, b);
- */
+
 static void on_process(void *_data)
 {
         struct data *data = _data;
@@ -136,48 +124,6 @@ static void on_process(void *_data)
                 data->rect.w = mc->region.size.width;
                 data->rect.h = mc->region.size.height;
         }
-        /* get cursor metadata */
-        // if ((mcs = spa_buffer_find_meta_data(buf, SPA_META_Cursor, sizeof(*mcs))) &&
-        //     spa_meta_cursor_is_valid(mcs)) {
-        //         struct spa_meta_bitmap *mb;
-        //         void *cdata;
-        //         int cstride;
- 
-        //         data->cursor_rect.x = mcs->position.x;
-        //         data->cursor_rect.y = mcs->position.y;
- 
-        //         mb = SPA_PTROFF(mcs, mcs->bitmap_offset, struct spa_meta_bitmap);
-        //         data->cursor_rect.w = mb->size.width;
-        //         data->cursor_rect.h = mb->size.height;
- 
-        //         if (data->cursor == NULL) {
-        //                 data->cursor = SDL_CreateTexture(data->renderer,
-        //                                          id_to_sdl_format(mb->format),
-        //                                          SDL_TEXTUREACCESS_STREAMING,
-        //                                          mb->size.width, mb->size.height);
-        //                 SDL_SetTextureBlendMode(data->cursor, SDL_BLENDMODE_BLEND);
-        //         }
- 
- 
-        //         if (SDL_LockTexture(data->cursor, NULL, &cdata, &cstride) < 0) {
-        //                 fprintf(stderr, "Couldn't lock cursor texture: %s\n", SDL_GetError());
-        //                 goto done;
-        //         }
- 
-        //         /* copy the cursor bitmap into the texture */
-        //         src = SPA_PTROFF(mb, mb->offset, uint8_t);
-        //         dst = cdata;
-        //         ostride = SPA_MIN(cstride, mb->stride);
- 
-        //         for (i = 0; i < mb->size.height; i++) {
-        //                 memcpy(dst, src, ostride);
-        //                 dst += cstride;
-        //                 src += mb->stride;
-        //         }
-        //         SDL_UnlockTexture(data->cursor);
- 
-        //         render_cursor = true;
-        // }
  
         /* copy video image in texture */
         if (data->is_yuv) {
@@ -283,8 +229,7 @@ on_stream_io_changed(void *_data, uint32_t id, void *area, uint32_t size)
  * will control the buffer memory allocation. This includes the metadata
  * that we would like on our buffer, the size, alignment, etc.
  */
-static void
-on_stream_param_changed(void *_data, uint32_t id, const struct spa_pod *param)
+static void on_stream_param_changed(void *_data, uint32_t id, const struct spa_pod *param)
 {
         static bool already_set = false;
         if (already_set) return;
@@ -406,6 +351,8 @@ on_stream_param_changed(void *_data, uint32_t id, const struct spa_pod *param)
                                 CURSOR_META_SIZE(64,64),
                                 CURSOR_META_SIZE(1,1),
                                 CURSOR_META_SIZE(256,256)));
+
+        // params[4] = build_raw_EnumFormat(data->format.info.raw.format, true, &b);
  
         /* we are done */
         pw_stream_update_params(stream, params, 4);
@@ -499,6 +446,7 @@ int pw_setup(int node_id) {
  
         SDL_SetHint(SDL_HINT_RENDER_DRIVER, "vulkan");
         SDL_SetHint(SDL_HINT_RENDER_VSYNC, "0");
+        SDL_SetHint(SDL_HINT_VIDEO_DOUBLE_BUFFER, "1");
         if (SDL_Init(SDL_INIT_VIDEO) < 0) {
                 fprintf(stderr, "can't initialize SDL: %s\n", SDL_GetError());
                 return -1;
@@ -515,12 +463,39 @@ int pw_setup(int node_id) {
                         break;
                 }
         }
- 
-        if (SDL_CreateWindowAndRenderer
-            (WIDTH, HEIGHT, SDL_WINDOW_BORDERLESS | SDL_WINDOW_FULLSCREEN, &data.window, &data.renderer)) {
+
+        if (found_xr_display_index == -1) {
+                // fprintf(stderr, "Display not found for glasses\n");
+                // return -1;
+                found_xr_display_index = numdisplays - 1;
+        }
+        SDL_DisplayID xr_display_id = display_ids[found_xr_display_index];
+        SDL_Rect display_bounds;
+        if (SDL_GetDisplayBounds(xr_display_id, &display_bounds) < 0) {
+                fprintf(stderr, "Couldn't get display bounds: %s\n", SDL_GetError());
+                return -1;
+        }
+
+        SDL_PropertiesID window_props = SDL_CreateProperties();
+        SDL_SetStringProperty(window_props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, "Breezy Desktop");
+        SDL_SetNumberProperty(window_props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, display_bounds.w);
+        SDL_SetNumberProperty(window_props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, display_bounds.h);
+        SDL_SetNumberProperty(window_props, SDL_PROP_WINDOW_CREATE_X_NUMBER, display_bounds.x);
+        SDL_SetNumberProperty(window_props, SDL_PROP_WINDOW_CREATE_Y_NUMBER, display_bounds.y);
+        SDL_SetNumberProperty(window_props, "flags", SDL_WINDOW_BORDERLESS | SDL_WINDOW_FULLSCREEN); //  | SDL_WINDOW_ALWAYS_ON_TOP
+        data.window = SDL_CreateWindowWithProperties(window_props);
+        if (!data.window) {
                 fprintf(stderr, "can't create window: %s\n", SDL_GetError());
                 return -1;
         }
+        SDL_DestroyProperties(window_props);
+ 
+        data.renderer = SDL_CreateRenderer(data.window, NULL, 0);
+        if (!data.renderer) {
+                fprintf(stderr, "can't create renderer: %s\n", SDL_GetError());
+                return -1;
+        }
+        SDL_SetRenderLogicalPresentation(data.renderer, 1920, 1080, SDL_LOGICAL_PRESENTATION_STRETCH, SDL_SCALEMODE_NEAREST);
  
         /* now connect the stream, we need a direction (input/output),
          * an optional target node to connect to, some flags and parameters

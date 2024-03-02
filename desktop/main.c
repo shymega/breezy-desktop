@@ -177,12 +177,12 @@ static void on_process(void *userdata) {
 void on_pipewire_stream_added(OrgGnomeMutterScreenCastStream *stream, guint node_id, gpointer user_data) {
     g_print("PipeWire stream added, node id: %u\n", node_id);
 
-    // win = create_window();
-    // setup_vulkan();
-
     lock = SDL_CreateMutex();
 
-    pw_setup(node_id);
+    if (pw_setup(node_id) < 0) {
+        g_printerr("Failed to setup PipeWire\n");
+        exit(1);
+    }
 }
 
 int main() {
@@ -323,12 +323,13 @@ int main() {
 
     // Call the RecordVirtual method
     g_variant_builder_init(&builder, G_VARIANT_TYPE("a{sv}"));
-    g_variant_builder_add(&builder, "{sv}", "is-platform", g_variant_new_boolean(TRUE));
+    // g_variant_builder_add(&builder, "{sv}", "is-platform", g_variant_new_boolean(TRUE));
     g_variant_builder_add(&builder, "{sv}", "cursor-mode", g_variant_new_uint32(1));
     parameters = g_variant_builder_end(&builder);
     gchar *stream_path = NULL;
-    success = org_gnome_mutter_screen_cast_session_call_record_virtual_sync(
+    success = org_gnome_mutter_screen_cast_session_call_record_area_sync(
         screen_cast_session,
+        0, 0, 1920, 1080,
         parameters,
         &stream_path,
         NULL, // cancellable
