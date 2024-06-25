@@ -3,7 +3,6 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import Meta from 'gi://Meta';
 import Shell from 'gi://Shell';
-import St from 'gi://St';
 
 import { CursorManager } from './cursormanager.js';
 import Globals from './globals.js';
@@ -35,7 +34,6 @@ export default class BreezyDesktopExtension extends Extension {
         this._cursor_manager = null;
         this._monitor_manager = null;
         this._xr_effect = null;
-        this._overlay = null;
         this._target_monitor = null;
         this._is_effect_running = false;
         this._distance_binding = null;
@@ -51,6 +49,7 @@ export default class BreezyDesktopExtension extends Extension {
         this._look_ahead_override_binding = null;
         this._optimal_monitor_config_binding = null;
         this._headset_as_primary_binding = null;
+        this._force_refresh_timeline = null;
 
         if (!Globals.logger) {
             Globals.logger = new Logger({
@@ -206,28 +205,8 @@ export default class BreezyDesktopExtension extends Extension {
             try {
                 const targetMonitor = this._target_monitor.monitor;
                 const refreshRate = targetMonitor.refreshRate ?? 60;
-                this._cursor_manager = new CursorManager(Main.layoutManager.uiGroup, refreshRate * 1.05);
+                this._cursor_manager = new CursorManager(global.stage, refreshRate);
                 this._cursor_manager.enable();
-
-                this._overlay = new St.Bin({ style: 'background-color: rgba(0, 0, 0, 1);'});
-                this._overlay.opacity = 255;
-                this._overlay.set_position(targetMonitor.x, targetMonitor.y);
-                this._overlay.set_size(targetMonitor.width, targetMonitor.height);
-
-                const overlayContent = new Clutter.Actor({clip_to_allocation: true});
-                const uiClone = new Clutter.Clone({ source: Main.layoutManager.uiGroup, clip_to_allocation: true });
-                uiClone.x = -targetMonitor.x;
-                uiClone.y = -targetMonitor.y;
-                if (Clutter.Container === undefined) {
-                    overlayContent.add_child(uiClone);
-                } else {
-                    overlayContent.add_actor(uiClone);
-                }
-
-                this._overlay.set_child(overlayContent);
-
-                global.stage.insert_child_above(this._overlay, null);
-                Shell.util_set_hidden_from_pick(this._overlay, true);
                 
                 this._xr_effect = new XREffect({
                     target_monitor: targetMonitor,
@@ -254,8 +233,13 @@ export default class BreezyDesktopExtension extends Extension {
                 this._display_size_binding = this.settings.bind('display-size', this._xr_effect, 'display-size', Gio.SettingsBindFlags.DEFAULT);
                 this._look_ahead_override_binding = this.settings.bind('look-ahead-override', this._xr_effect, 'look-ahead-override', Gio.SettingsBindFlags.DEFAULT);
 
-                this._overlay.add_effect_with_name('xr-desktop', this._xr_effect);
+                global.stage.add_effect_with_name('xr-desktop', this._xr_effect);
                 Meta.disable_unredirect_for_display(global.display);
+
+                this._force_refresh_timeline = Clutter.Timeline.new_for_actor(Main.layoutManager.uiGroup, Math.floor(1000 / refreshRate));
+                this._force_refresh_timeline.set_repeat_count(-1);
+                this._force_refresh_timeline.connect('completed', () => Main.layoutManager.uiGroup.opacity = Main.layoutManager.uiGroup.opacity === 255 ? 254 : 255);
+                this._force_refresh_timeline.start();
 
                 this._add_settings_keybinding('recenter-display-shortcut', this._recenter_display.bind(this));
                 this._add_settings_keybinding('toggle-display-distance-shortcut', this._xr_effect._change_distance.bind(this._xr_effect));
@@ -376,14 +360,15 @@ export default class BreezyDesktopExtension extends Extension {
             Main.wm.removeKeybinding('recenter-display-shortcut');
             Main.wm.removeKeybinding('toggle-display-distance-shortcut');
             Main.wm.removeKeybinding('toggle-follow-shortcut');
+
+            if (this._force_refresh_timeline) {
+                this._force_refresh_timeline.stop();
+                this._force_refresh_timeline = null;
+            }
+
             Meta.enable_unredirect_for_display(global.display);
 
-            if (this._overlay) {
-                global.stage.remove_child(this._overlay);
-                this._overlay.remove_effect_by_name('xr-desktop');
-                this._overlay.destroy();
-                this._overlay = null;
-            }
+            global.stage.remove_effect_by_name('xr-desktop');
 
             if (this._distance_binding) {
                 this.settings.unbind(this._distance_binding);

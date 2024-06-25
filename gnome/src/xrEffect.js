@@ -65,7 +65,14 @@ const shaderUniformLocations = {
     'half_fov_y_rads': null,
     'source_resolution': null,
     'display_resolution': null,
-    'curved_display': null
+    'curved_display': null,
+
+    // start end values describe where the display we care about is in relation to the whole stage,
+    // range from 0.0 to 1.0, where a fullscreen effect start at 0.0 and end at 1.0
+    'display_x_start': null,
+    'display_y_start': null,
+    'display_x_end': null,
+    'display_y_end': null,
 };
 
 function setUniformFloat(effect, locationName, dataViewInfo, value) {
@@ -132,10 +139,9 @@ function setIntermittentUniformVariables() {
                 const halfFovZRads = degreeToRadian(displayFov / diagToVertRatio) / 2;
                 const halfFovYRads = halfFovZRads * displayAspectRatio;
 
-                // our overlay doesn't quite cover the full screen texture, which allows us to see some of the real desktop
-                // underneath, so we trim three pixels around the entire edge of the texture
-                const trimWidthPercent = 3.0 / this.target_monitor.width;
-                const trimHeightPercent = 3.0 / this.target_monitor.height;
+                // some colors bleed around the edge; trim two pixels around the entire edge of the texture
+                const trimWidthPercent = 2.0 / this.target_monitor.width;
+                const trimHeightPercent = 2.0 / this.target_monitor.height;
                 
                 // all these values are transferred directly, unmodified from the driver
                 transferUniformFloat(this, 'look_ahead_cfg', dataView, LOOK_AHEAD_CFG);
@@ -147,6 +153,10 @@ function setIntermittentUniformVariables() {
                 setSingleFloat(this, 'half_fov_z_rads', halfFovZRads);
                 setSingleFloat(this, 'half_fov_y_rads', halfFovYRads);
                 setSingleFloat(this, 'curved_display', this.curved_display ? 1.0 : 0.0);
+                setSingleFloat(this, 'display_x_start', this.target_monitor.x / global.stage.width);
+                setSingleFloat(this, 'display_y_start', this.target_monitor.y / global.stage.height);
+                setSingleFloat(this, 'display_x_end', (this.target_monitor.x + this.target_monitor.width) / global.stage.width);
+                setSingleFloat(this, 'display_y_end', (this.target_monitor.y + this.target_monitor.height) / global.stage.height);
             }
 
             // update the supported device detected property if the state changes, trigger "notify::" events
@@ -273,10 +283,6 @@ export const XREffect = GObject.registerClass({
     constructor(params = {}) {
         super(params);
 
-        // target a slightly lower framerate than the monitor's refresh rate to prevent repainting too frequently
-        const frameTimeFramerate = this.target_framerate * 0.9;
-        this._frametime = Math.floor(1000 / frameTimeFramerate);
-
         this._is_display_distance_at_end = false;
         this._distance_ease_timeline = null;
 
@@ -316,9 +322,6 @@ export const XREffect = GObject.registerClass({
     }
 
     vfunc_paint_target(node, paintContext) {
-        var now = Date.now();
-        var lastPaint = this._last_paint || 0;
-        var frametime = this._frametime;
         var calibratingImage = this.calibratingImage;
         var customBannerImage = this.customBannerImage;
         let data = Globals.ipc_file.load_contents(null);
@@ -338,11 +341,6 @@ export const XREffect = GObject.registerClass({
                 }
                 this.setIntermittentUniformVariables = setIntermittentUniformVariables.bind(this);
                 this.setIntermittentUniformVariables();
-
-                this._redraw_timeout_id = GLib.timeout_add(GLib.PRIORITY_DEFAULT, this._frametime, () => {
-                    if ((now - lastPaint) > frametime) global.stage.queue_redraw();
-                    return GLib.SOURCE_CONTINUE;
-                });
 
                 this._uniforms_timeout_id = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 250, (() => {
                     this.setIntermittentUniformVariables();
@@ -388,11 +386,9 @@ export const XREffect = GObject.registerClass({
         } else {
             super.vfunc_paint_target(node, paintContext);
         }
-        this._last_paint = now;
     }
 
     cleanup() {
-        if (this._redraw_timeout_id) GLib.source_remove(this._redraw_timeout_id);
         if (this._uniforms_timeout_id) GLib.source_remove(this._uniforms_timeout_id);
     }
 });
