@@ -40,6 +40,7 @@ copy_static_files() {
     # Copy non generated files to destdir
     cp $SRC_DIR/*.js $DEST_DIR/
     cp $SRC_DIR/*.frag $DEST_DIR/
+    cp $SRC_DIR/*.vert $DEST_DIR/
     mkdir -p "$DEST_DIR/schemas/"
     cp $SRC_DIR/schemas/*.xml $DEST_DIR/schemas/
     mkdir -p $DEST_DIR/dbus-interfaces/
