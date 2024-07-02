@@ -315,9 +315,54 @@ export const XREffect = GObject.registerClass({
     }
 
     vfunc_build_pipeline() {
-        const code = getShaderSource(`${Globals.extension_dir}/IMUAdjust.frag`);
-        const main = 'PS_IMU_Transform(vec4(0, 0, 0, 0), cogl_tex_coord_in[0].xy, cogl_color_out);';
-        this.add_glsl_snippet(Shell.SnippetHook.FRAGMENT, code, main, false);
+        const vertDeclares = getShaderSource(`${Globals.extension_dir}/IMUAdjust.vert`);
+        const vertMain = `                                                       \n
+            vec2 tl = vec2(0.0, 0.0);                                                       \n
+            vec2 tr = vec2(1.0, 0.0);                                                       \n
+            vec2 bl = vec2(0.0, 1.0);                                                       \n
+            vec2 br = vec2(1.0, 1.0);                                                       \n
+            if (!sbs_enabled) {                                                             \n
+                vec3 lens_vector = vec3(lens_distance_ratio, 0.0, 0.0);                     \n
+                float x_min = 0.0;                                                          \n
+                float x_max = 1.0;                                                          \n
+                texcoord_transform(tl, lens_vector, x_min, x_max, texcoord_tl);       \n
+                texcoord_transform(tr, lens_vector, x_min, x_max, texcoord_tr);       \n
+                texcoord_transform(bl, lens_vector, x_min, x_max, texcoord_bl);       \n
+                texcoord_transform(br, lens_vector, x_min, x_max, texcoord_br);       \n
+            } else {                                                                        \n
+                // left lens                                                                \n
+                float x_min = 0.0;                                                          \n
+                float x_max = sbs_content ? 0.5 : 1.0;                                      \n
+                if (sbs_mode_stretched) {                                                   \n
+                    x_min = 0.25;                                                           \n
+                    x_max = sbs_content ? 0.5 : 0.75;                                       \n
+                }                                                                           \n
+                float lens_from_center = lens_distance_ratio / 3.0;                         \n
+                vec3 lens_vector = vec3(lens_distance_ratio, lens_from_center, 0.0);        \n
+                texcoord_transform(tl, lens_vector, x_min, x_max, texcoord_tl);       \n
+                texcoord_transform(tr, lens_vector, x_min, x_max, texcoord_tr);       \n
+                texcoord_transform(bl, lens_vector, x_min, x_max, texcoord_bl);       \n
+                texcoord_transform(br, lens_vector, x_min, x_max, texcoord_br);       \n
+                                                                                            \n
+                // right lens                                                               \n
+                x_min = sbs_content ? 0.5 : 0.0;                                            \n
+                x_max = 1.0;                                                                \n
+                if (sbs_mode_stretched) {                                                   \n
+                    x_min = sbs_content ? 0.5 : 0.25;                                       \n
+                    x_max = 0.75;                                                           \n
+                }                                                                           \n
+                lens_vector = vec3(lens_distance_ratio, -lens_from_center, 0.0);            \n
+                texcoord_transform(0.0, 0.0, lens_vector, x_min, x_max, texcoord_tl_r);     \n
+                texcoord_transform(1.0, 0.0, lens_vector, x_min, x_max, texcoord_tr_r);     \n
+                texcoord_transform(0.0, 1.0, lens_vector, x_min, x_max, texcoord_bl_r);     \n
+                texcoord_transform(1.0, 1.0, lens_vector, x_min, x_max, texcoord_br_r);     \n
+            }                                                                               \n
+        `;
+        this.add_glsl_snippet(Shell.SnippetHook.VERTEX, vertDeclares, vertMain, false);
+
+        const fragDeclares = getShaderSource(`${Globals.extension_dir}/IMUAdjust.frag`);
+        const fragMain = 'imu_adjust(cogl_tex_coord_in[0].xy, cogl_color_out);';
+        this.add_glsl_snippet(Shell.SnippetHook.FRAGMENT, fragDeclares, fragMain, false);
     }
 
     vfunc_paint_target(node, paintContext) {
