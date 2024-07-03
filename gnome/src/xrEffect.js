@@ -22,6 +22,7 @@ import {
     UINT_SIZE,
     UINT8_SIZE
 } from "./ipc.js";
+import { computeUnitTimeQuaternion } from "./imu.js";
 import { degreeToRadian } from "./math.js";
 import { getShaderSource } from "./shader.js";
 import { isValidKeepAlive, toSec } from "./time.js";
@@ -41,15 +42,22 @@ const LENS_DISTANCE_RATIO = [dataViewEnd(DISPLAY_FOV), FLOAT_SIZE, 1];
 const SBS_ENABLED = [dataViewEnd(LENS_DISTANCE_RATIO), BOOL_SIZE, 1];
 const CUSTOM_BANNER_ENABLED = [dataViewEnd(SBS_ENABLED), BOOL_SIZE, 1];
 const EPOCH_MS = [dataViewEnd(CUSTOM_BANNER_ENABLED), UINT_SIZE, 2];
-const IMU_QUAT_DATA = [dataViewEnd(EPOCH_MS), FLOAT_SIZE, 16];
-const IMU_PARITY_BYTE = [dataViewEnd(IMU_QUAT_DATA), UINT8_SIZE, 1];
+const IMU_QUAT_1 = [dataViewEnd(EPOCH_MS), FLOAT_SIZE, 4];
+const IMU_QUAT_2 = [dataViewEnd(IMU_QUAT_1), FLOAT_SIZE, 4];
+const IMU_QUAT_3 = [dataViewEnd(IMU_QUAT_2), FLOAT_SIZE, 4];
+const IMU_QUAT_TIMES = [dataViewEnd(IMU_QUAT_3), FLOAT_SIZE, 4];
+const IMU_PARITY_BYTE = [dataViewEnd(IMU_QUAT_TIMES), UINT8_SIZE, 1];
 const DATA_VIEW_LENGTH = dataViewEnd(IMU_PARITY_BYTE);
+
+// all IMU data in one array
+const IMU_QUAT_DATA = [IMU_QUAT_1[DATA_VIEW_INFO_OFFSET_INDEX], FLOAT_SIZE, 16];
 
 // cached after first retrieval
 const shaderUniformLocations = {
     'enabled': null,
     'show_banner': null,
-    'imu_quat_data': null,
+    'imu_pose': null,
+    'imu_unit_quat': null,
     'look_ahead_cfg': null,
     'look_ahead_ms': null,
     'trim_width_percent': null,
@@ -109,8 +117,17 @@ function lookAheadMS(dataView) {
     return lookAheadCfg[0] + dataAge;
 }
 
+function unitTimeQuaternion(dataView) {
+    const imuQuat1 = dataViewFloatArray(dataView, IMU_QUAT_1);
+    const imuQuat2 = dataViewFloatArray(dataView, IMU_QUAT_2);
+    const imuQuatTimes = dataViewFloatArray(dataView, IMU_QUAT_TIMES);
+    const deltaTime = imuQuatTimes[0] - imuQuatTimes[1];
+    return computeUnitTimeQuaternion(imuQuat1, imuQuat2, deltaTime);
+}
+
 // most uniforms don't change frequently, this function should be called periodically
 function setIntermittentUniformVariables() {
+    console.log(JSON.stringify(computeUnitTimeQuaternion([0.462, 0.191, 0.462, 0.733], [0.462, 0.191, 0.462, 0.733], 10)));
     try {
         const dataView = this._dataView;
 
@@ -118,7 +135,7 @@ function setIntermittentUniformVariables() {
             const version = dataViewUint8(dataView, VERSION);
             const imuDateMs = dataViewBigUint(dataView, EPOCH_MS);
             const validKeepalive = isValidKeepAlive(toSec(imuDateMs));
-            const imuData = dataViewFloatArray(dataView, IMU_QUAT_DATA);
+            const imuData = dataViewFloatArray(dataView, IMU_QUAT_1);
             const imuResetState = validKeepalive && imuData[0] === 0.0 && imuData[1] === 0.0 && imuData[2] === 0.0 && imuData[3] === 1.0;
             const enabled = dataViewUint8(dataView, ENABLED) !== 0 && version === DATA_LAYOUT_VERSION && validKeepalive;
             const displayRes = dataViewUint32Array(dataView, DISPLAY_RES);
@@ -364,7 +381,8 @@ export const XREffect = GObject.registerClass({
                         setSingleFloat(this, 'display_north_offset', this.display_distance);
                         setSingleFloat(this, 'look_ahead_ms', 
                             this.look_ahead_override === -1 ? lookAheadMS(this._dataView) : this.look_ahead_override);
-                        setUniformMatrix(this, 'imu_quat_data', 4, this._dataView, IMU_QUAT_DATA);
+                        transferUniformFloat(this, 'imu_pose', this._dataView, IMU_QUAT_1);
+                        this.set_uniform_float(shaderUniformLocations['imu_unit_quat'], 4, unitTimeQuaternion(this._dataView));
                         setSingleFloat(this, 'display_size', this.display_size);
                         success = true;
                     }
