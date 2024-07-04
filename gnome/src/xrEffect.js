@@ -317,62 +317,45 @@ export const XREffect = GObject.registerClass({
     vfunc_build_pipeline() {
         const vertDeclares = getShaderSource(`${Globals.extension_dir}/IMUAdjust.vert`);
         const vertMain = `
-            vec2 half_widths = vec2(tan(half_fov_y_rads), tan(half_fov_z_rads));
-            fov_half_widths = half_widths;
-            vec2 widths = fov_half_widths * 2;
-            fov_widths = widths;
-
             vec2 tl = vec2(0.0, 0.0);
             vec2 tr = vec2(1.0, 0.0);
             vec2 bl = vec2(0.0, 1.0);
             vec2 br = vec2(1.0, 1.0);
             if (!sbs_enabled) {
                 vec3 lens_vector = vec3(lens_distance_ratio, 0.0, 0.0);
-                vec3 rot_lens_vector = applyQuaternionToVector(imu_quat_data[0], lens_vector);
-                rotated_lens_vector = rot_lens_vector;
                 float x_min = 0.0;
                 float x_max = 1.0;
-                angle_tl = texcoord_angle_transform(tl, rot_lens_vector, half_widths, widths);
-                angle_tr = texcoord_angle_transform(tr, rot_lens_vector, half_widths, widths);
-                angle_bl = texcoord_angle_transform(bl, rot_lens_vector, half_widths, widths);
-                angle_br = texcoord_angle_transform(br, rot_lens_vector, half_widths, widths);
-                texcoord_x_limits = vec2(0.0, 1.0);
-
-                // these are not used, but we need to set them to something
-                angle_tl_r = angle_tl;
-                angle_tr_r = angle_tr;
-                angle_bl_r = angle_bl;
-                angle_br_r = angle_br;
-                texcoord_x_limits_r = texcoord_x_limits;
+                texcoord_tl = texcoord_transform(tl, lens_vector, x_min, x_max);
+                texcoord_tr = texcoord_transform(tr, lens_vector, x_min, x_max);
+                texcoord_bl = texcoord_transform(bl, lens_vector, x_min, x_max);
+                texcoord_br = texcoord_transform(br, lens_vector, x_min, x_max);
             } else {
                 // left lens
-                vec2 x_limits = vec2(0.0, sbs_content ? 0.5 : 1.0);
-                if (!sbs_mode_stretched) x_limits = vec2(0.25, sbs_content ? 0.5 : 0.75);
-                texcoord_x_limits = x_limits;
-                
+                float x_min = 0.0;
+                float x_max = sbs_content ? 0.5 : 1.0;
+                if (sbs_mode_stretched) {
+                    x_min = 0.25;
+                    x_max = sbs_content ? 0.5 : 0.75;
+                }
                 float lens_from_center = lens_distance_ratio / 3.0;
                 vec3 lens_vector = vec3(lens_distance_ratio, lens_from_center, 0.0);
-                vec3 rot_lens_vector = applyQuaternionToVector(imu_quat_data[0], lens_vector);
-                rotated_lens_vector = rot_lens_vector;
-                angle_tl = texcoord_angle_transform(tl, rot_lens_vector, half_widths, widths);
-                angle_tr = texcoord_angle_transform(tr, rot_lens_vector, half_widths, widths);
-                angle_bl = texcoord_angle_transform(bl, rot_lens_vector, half_widths, widths);
-                angle_br = texcoord_angle_transform(br, rot_lens_vector, half_widths, widths);
+                texcoord_tl = texcoord_transform(tl, lens_vector, x_min, x_max);
+                texcoord_tr = texcoord_transform(tr, lens_vector, x_min, x_max);
+                texcoord_bl = texcoord_transform(bl, lens_vector, x_min, x_max);
+                texcoord_br = texcoord_transform(br, lens_vector, x_min, x_max);
 
                 // right lens
-                x_limits = vec2(sbs_content ? 0.5 : 0.0, 1.0);
-                if (!sbs_mode_stretched) {
-                    x_limits = vec2(sbs_content ? 0.5 : 0.25, 0.75);
+                x_min = sbs_content ? 0.5 : 0.0;
+                x_max = 1.0;
+                if (sbs_mode_stretched) {
+                    x_min = sbs_content ? 0.5 : 0.25;
+                    x_max = 0.75;
                 }
-                texcoord_x_limits_r = x_limits;
-
                 lens_vector = vec3(lens_distance_ratio, -lens_from_center, 0.0);
-                rot_lens_vector = applyQuaternionToVector(imu_quat_data[0], lens_vector);
-                rotated_lens_vector_r = rot_lens_vector;
-                angle_tl_r = texcoord_angle_transform(tl, rot_lens_vector, half_widths, widths);
-                angle_tr_r = texcoord_angle_transform(tr, rot_lens_vector, half_widths, widths);
-                angle_bl_r = texcoord_angle_transform(bl, rot_lens_vector, half_widths, widths);
-                angle_br_r = texcoord_angle_transform(br, rot_lens_vector, half_widths, widths);
+                texcoord_tl_r = texcoord_transform(tl, lens_vector, x_min, x_max);
+                texcoord_tr_r = texcoord_transform(tr, lens_vector, x_min, x_max);
+                texcoord_bl_r = texcoord_transform(bl, lens_vector, x_min, x_max);
+                texcoord_br_r = texcoord_transform(br, lens_vector, x_min, x_max);
             }
         `;
         this.add_glsl_snippet(Shell.SnippetHook.VERTEX, vertDeclares, vertMain, false);
