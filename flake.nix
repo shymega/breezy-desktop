@@ -49,6 +49,7 @@
             meta.mainProgram = "breezydesktop";
           };
           default = self.packages.${pkgs.stdenv.hostPlatform.system}.breezy-desktop;
+          inherit (inputs.xrlinuxdriver.packages.${pkgs.stdenv.hostPlatform.system}) xrlinuxdriver;
         }
       );
 
