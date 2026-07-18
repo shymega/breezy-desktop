@@ -19,6 +19,7 @@
   gst_all_1,
   appstream,
   runtimeShell,
+  pipewire,
 }:
 stdenv.mkDerivation (finalAttrs: {
   pname = "breezy-desktop-ui";
@@ -55,6 +56,7 @@ stdenv.mkDerivation (finalAttrs: {
     glib
     gst_all_1.gstreamer
     gst_all_1.gst-plugins-base
+    pipewire # pipewiresrc GStreamer element, required for virtual displays
     (python3.withPackages (
       ps: with ps; [
         pygobject3
