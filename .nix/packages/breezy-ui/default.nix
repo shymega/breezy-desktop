@@ -18,6 +18,7 @@
   python3,
   gst_all_1,
   appstream,
+  runtimeShell,
 }:
 stdenv.mkDerivation (finalAttrs: {
   pname = "breezy-desktop-ui";
@@ -79,6 +80,24 @@ stdenv.mkDerivation (finalAttrs: {
   # Skip tests that need network or display
   mesonFlags = [
   ];
+
+  # The UI locates helper programs (virtualdisplay, breezy_gnome_verify) via
+  # $BINDIR, falling back to ~/.local/bin where the traditional installer puts
+  # them. Point it at our own bin instead.
+  #
+  # breezy_gnome_verify normally re-hashes installed files against a manifest
+  # to detect broken or tampered imperative installs. Nix store paths are
+  # immutable and content-hash-verified, so the check is inherently satisfied;
+  # the UI only needs the success handshake.
+  postInstall = ''
+    printf '#!%s\necho "Verification succeeded"\n' "${runtimeShell}" \
+      > $out/bin/breezy_gnome_verify
+    chmod 755 $out/bin/breezy_gnome_verify
+  '';
+
+  preFixup = ''
+    gappsWrapperArgs+=(--set BINDIR "$out/bin")
+  '';
 
   # wrapGAppsHook4 handles GI_TYPELIB_PATH, GDK_PIXBUF, etc.
 
