@@ -8,12 +8,20 @@
   pkg-config,
   kdePackages,
   libepoxy,
+  python3,
 }:
 stdenv.mkDerivation (finalAttrs: {
   pname = "breezy-kwin";
   inherit version;
 
   src = self;
+
+  # The effect shells out to a bare `python3` on $PATH at runtime (see
+  # kwin/src/xrdriveripc/xrdriveripc.cpp) to talk to the XR driver. This is a
+  # KCM plugin loaded into the system kcmshell6, not an executable we wrap
+  # ourselves, so propagate python3 into the user environment of whatever
+  # profile installs this package.
+  propagatedUserEnvPkgs = [ python3 ];
 
   sourceRoot = ".";
 
